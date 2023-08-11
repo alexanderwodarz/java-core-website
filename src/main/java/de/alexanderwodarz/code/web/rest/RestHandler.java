@@ -10,10 +10,12 @@ import de.alexanderwodarz.code.web.rest.authentication.AuthenticationFilterRespo
 import de.alexanderwodarz.code.web.rest.authentication.AuthenticationManager;
 import de.alexanderwodarz.code.web.rest.authentication.CorsResponse;
 import lombok.SneakyThrows;
+import org.apache.commons.io.IOUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import javax.imageio.ImageIO;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -21,6 +23,8 @@ import java.lang.reflect.Parameter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+
+import static org.json.HTTP.CRLF;
 
 public class RestHandler extends Thread {
 
@@ -71,6 +75,7 @@ public class RestHandler extends Thread {
             out = new PrintWriter(connect.getOutputStream(), true, StandardCharsets.UTF_8);
             dataOut = new BufferedOutputStream(connect.getOutputStream());
             List<String> responseHeaders = new ArrayList<>();
+            RestWebRequest req = findRequest(data);
             if (WebCore.getFilter() != null) {
                 if (data.getMethod().equalsIgnoreCase("options")) {
                     Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
@@ -80,6 +85,8 @@ public class RestHandler extends Thread {
                         return;
                     }
                 }
+                data.setLevel(req.getRequest().level());
+                data.setOriginalPath(req.getRequest().path());
                 Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doFilter")).findFirst().orElse(null);
                 if (method != null) {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
@@ -94,7 +101,6 @@ public class RestHandler extends Thread {
                     responseHeaders = response.getHeaders();
                 }
             }
-            RestWebRequest req = findRequest(data);
             if (req == null) {
                 print("{\"error\":\"not found\"}", "application/json", dataOut, out, 404);
             } else {
@@ -103,13 +109,20 @@ public class RestHandler extends Thread {
                     Parameter parameter = req.getMethod().getParameters()[i];
                     if (parameter.isAnnotationPresent(PathVariable.class)) {
                         PathVariable variable = parameter.getAnnotation(PathVariable.class);
-                        o[i] = req.getFindPathResponse().getVariables().get("{" + variable.value() + "}");
+                        String var = req.getFindPathResponse().getVariables().get("{" + variable.value() + "}");
+                        if (parameter.getType().equals(Optional.class)) {
+                            o[i] = Optional.of(var);
+                        } else {
+                            o[i] = var;
+                        }
                     }
                     if (parameter.isAnnotationPresent(QueryParam.class)) {
                         QueryParam param = parameter.getAnnotation(QueryParam.class);
                         String value = req.getFindPathResponse().getQueries().get(param.value());
-                        Optional<String> test = Optional.of(value);
-                        o[i] = test;
+                        if (value == null)
+                            o[i] = Optional.empty();
+                        else
+                            o[i] = Optional.of(value);
                     }
                     if (parameter.isAnnotationPresent(RequestBody.class)) {
                         Class<?> type = parameter.getType();
@@ -137,9 +150,13 @@ public class RestHandler extends Thread {
                 else
                     response = (ResponseData) req.getMethod().invoke(null);
                 AuthenticationManager.setAuthentication(null);
-                print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
+                if (response.getFile() == null)
+                    print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
+                else {
+                    printFile(response.getFile(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
+                }
             }
-        }catch (JSONException | IllegalArgumentException e){
+        } catch (JSONException | IllegalArgumentException e) {
             print("{\"error\":\"invalid argument\"}", "application/json", dataOut, out, 400);
         } catch (InvocationTargetException e) {
             Log.log(e.getMessage(), Level.ERROR);
@@ -258,7 +275,7 @@ public class RestHandler extends Thread {
             contentType += "; charset=UTF-8";
 
         out.println("HTTP/1.1 " + status);
-        out.println("Server: Java HTTP von Alex lol");
+        out.println("Server: java-webcore");
         out.println("Date: " + new Date());
         out.println("Content-type: " + contentType);
         out.println("Content-Length: " + fileLength);
@@ -277,6 +294,28 @@ public class RestHandler extends Thread {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @SneakyThrows
+    private void printFile(File file, String contentType, BufferedOutputStream dataOut, PrintWriter out, int status, List<String> headers) {
+        InputStream is = new FileInputStream(file);
+        byte[] bytes = IOUtils.toByteArray(is);
+        out.println("HTTP/1.1 " + status);
+        out.println("Server: java-webcore");
+        out.println("Date: " + new Date());
+        out.println("Content-type: " + contentType);
+        out.println("Content-Length: " + bytes.length);
+        out.println("Connection: Keep-Alive");
+        if (headers != null && headers.size() > 0) {
+            for (String header : headers) {
+                out.println(header);
+            }
+        }
+        out.println();
+        out.flush();
+        dataOut.write(bytes);
+        dataOut.write((CRLF + CRLF).getBytes());
+        dataOut.flush();
     }
 
     private byte[] readFileData(File file, int fileLength) throws IOException {

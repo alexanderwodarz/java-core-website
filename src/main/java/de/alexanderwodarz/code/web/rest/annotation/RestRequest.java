@@ -14,5 +14,6 @@ public @interface RestRequest {
     String path() default "";
 
     String produces() default "";
+    int level() default 0;
 
 }
