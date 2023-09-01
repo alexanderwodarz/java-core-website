@@ -15,7 +15,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import javax.imageio.ImageIO;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -43,6 +42,8 @@ public class RestHandler extends Thread {
         try {
             BufferedReader br = new BufferedReader(new InputStreamReader(connect.getInputStream()));
             String line = br.readLine();
+            if (line == null)
+                return;
             boolean first = true;
             while (line.length() != 0) {
                 if (first) {
@@ -85,8 +86,14 @@ public class RestHandler extends Thread {
                         return;
                     }
                 }
+
+                if (req == null) {
+                    error(404, new JSONObject().put("error", "not found").put("path", data.getPath()).put("method", data.getMethod()).toString(), null, data, dataOut, out, false);
+                    return;
+                }
                 data.setLevel(req.getRequest().level());
-                data.setOriginalPath(req.getRequest().path());
+                data.setOriginalPath(req.getController().path() + req.getRequest().path());
+                data.setVariables(req.getFindPathResponse().getVariables());
                 Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doFilter")).findFirst().orElse(null);
                 if (method != null) {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
@@ -102,84 +109,67 @@ public class RestHandler extends Thread {
                 }
             }
             if (req == null) {
-                print("{\"error\":\"not found\"}", "application/json", dataOut, out, 404);
-            } else {
-                Object[] o = new Object[req.getMethod().getParameterCount()];
-                for (int i = 0; i < req.getMethod().getParameters().length; i++) {
-                    Parameter parameter = req.getMethod().getParameters()[i];
-                    if (parameter.isAnnotationPresent(PathVariable.class)) {
-                        PathVariable variable = parameter.getAnnotation(PathVariable.class);
-                        String var = req.getFindPathResponse().getVariables().get("{" + variable.value() + "}");
-                        if (parameter.getType().equals(Optional.class)) {
-                            o[i] = Optional.of(var);
-                        } else {
-                            o[i] = var;
-                        }
+                error(404, new JSONObject().put("error", "not found").put("path", data.getPath()).put("method", data.getMethod()).toString(), null, data, dataOut, out, false);
+                return;
+            }
+            Object[] o = new Object[req.getMethod().getParameterCount()];
+            for (int i = 0; i < req.getMethod().getParameters().length; i++) {
+                Parameter parameter = req.getMethod().getParameters()[i];
+                if (parameter.isAnnotationPresent(PathVariable.class)) {
+                    PathVariable variable = parameter.getAnnotation(PathVariable.class);
+                    String var = req.getFindPathResponse().getVariables().get("{" + variable.value() + "}");
+                    if (parameter.getType().equals(Optional.class)) {
+                        o[i] = Optional.of(var);
+                    } else {
+                        o[i] = var;
                     }
-                    if (parameter.isAnnotationPresent(QueryParam.class)) {
-                        QueryParam param = parameter.getAnnotation(QueryParam.class);
-                        String value = req.getFindPathResponse().getQueries().get(param.value());
-                        if (value == null)
-                            o[i] = Optional.empty();
-                        else
-                            o[i] = Optional.of(value);
-                    }
-                    if (parameter.isAnnotationPresent(RequestBody.class)) {
-                        Class<?> type = parameter.getType();
-                        if (type.equals(JSONObject.class)) {
-                            o[i] = new JSONObject(body);
-                        } else if (type.equals(JSONArray.class)) {
-                            o[i] = new JSONArray(body);
-                        } else if (type.equals(Integer.class)) {
-                            o[i] = Integer.parseInt(body);
-                        } else if (type.equals(Double.class)) {
-                            o[i] = Double.parseDouble(body);
-                        } else if (type.equals(Long.class)) {
-                            o[i] = Long.parseLong(body);
-                        } else {
-                            o[i] = body;
-                        }
-                    }
-                    if (parameter.getType() == RequestData.class)
-                        o[i] = data;
                 }
+                if (parameter.isAnnotationPresent(QueryParam.class)) {
+                    QueryParam param = parameter.getAnnotation(QueryParam.class);
+                    String value = req.getFindPathResponse().getQueries().get(param.value());
+                    if (value == null)
+                        o[i] = Optional.empty();
+                    else
+                        o[i] = Optional.of(value);
+                }
+                if (parameter.isAnnotationPresent(RequestBody.class)) {
+                    Class<?> type = parameter.getType();
+                    if (type.equals(JSONObject.class)) {
+                        o[i] = new JSONObject(body);
+                    } else if (type.equals(JSONArray.class)) {
+                        o[i] = new JSONArray(body);
+                    } else if (type.equals(Integer.class)) {
+                        o[i] = Integer.parseInt(body);
+                    } else if (type.equals(Double.class)) {
+                        o[i] = Double.parseDouble(body);
+                    } else if (type.equals(Long.class)) {
+                        o[i] = Long.parseLong(body);
+                    } else {
+                        o[i] = body;
+                    }
+                }
+                if (parameter.getType() == RequestData.class)
+                    o[i] = data;
+            }
 
-                ResponseData response;
-                if (req.getMethod().getParameterCount() > 0)
-                    response = (ResponseData) req.getMethod().invoke(null, o);
-                else
-                    response = (ResponseData) req.getMethod().invoke(null);
-                AuthenticationManager.setAuthentication(null);
-                if (response.getFile() == null)
-                    print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
-                else {
-                    printFile(response.getFile(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
-                }
+            ResponseData response;
+            if (req.getMethod().getParameterCount() > 0)
+                response = (ResponseData) req.getMethod().invoke(null, o);
+            else
+                response = (ResponseData) req.getMethod().invoke(null);
+            AuthenticationManager.setAuthentication(null);
+            if (response.getFile() == null)
+                print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
+            else {
+                printFile(response.getFile(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
             }
+
         } catch (JSONException | IllegalArgumentException e) {
-            print("{\"error\":\"invalid argument\"}", "application/json", dataOut, out, 400);
+            error(400, new JSONObject().put("error", "invalid argument").toString(), e, data, dataOut, out);
         } catch (InvocationTargetException e) {
-            Log.log(e.getMessage(), Level.ERROR);
-            data.setMethod("GET");
-            data.setPath("/error/500");
-            RestWebRequest req = findRequest(data);
-            String body = "{\"error\":\"internal server error\"}";
-            int code = 500;
-            if (req != null) {
-                ResponseData response = trigger(req, data);
-                if (response != null) {
-                    body = response.getBody();
-                    code = response.getCode();
-                }
-            }
-            print(body, "application/json", dataOut, out, code);
-        } catch (FileNotFoundException fnfe) {
-            try {
-                fileNotFound(dataOut, out, fileRequested, "");
-            } catch (IOException ioe) {
-                fnfe.printStackTrace();
-            }
-        } catch (NullPointerException | IllegalAccessException e) {
+            error(500, new JSONObject().put("error", "internal server error").toString(), e, data, dataOut, out);
+        } catch (FileNotFoundException | NullPointerException | IllegalAccessException e) {
+            error(404, new JSONObject().put("error", "not found").put("method", data.getMethod()).put("path", data.getPath()).toString(), e, data, dataOut, out);
         } catch (IOException ioe) {
             System.err.println("Server error : " + ioe);
         } finally {
@@ -194,6 +184,27 @@ public class RestHandler extends Thread {
             }
 
         }
+    }
+
+    public void error(int statusCode, String body, Exception e, RequestData data, BufferedOutputStream dataOut, PrintWriter out) {
+        error(statusCode, body, e, data, dataOut, out, true);
+    }
+
+    public void error(int statusCode, String body, Exception e, RequestData data, BufferedOutputStream dataOut, PrintWriter out, boolean showError) {
+        if (showError)
+            Log.log(e.getMessage(), Level.ERROR);
+        data.setMethod("GET");
+        data.setPath("/error/" + statusCode);
+        RestWebRequest req = findRequest(data);
+
+        if (req != null) {
+            ResponseData response = trigger(req, data);
+            if (response != null) {
+                body = response.getBody();
+                statusCode = response.getCode();
+            }
+        }
+        print(body, "application/json", dataOut, out, statusCode);
     }
 
     public ResponseData trigger(RestWebRequest req, RequestData data) {
@@ -259,6 +270,8 @@ public class RestHandler extends Thread {
 
     @SneakyThrows
     private void print(String content, String contentType, BufferedOutputStream dataOut, PrintWriter out, int status, List<String> headers) {
+        if (out == null)
+            return;
         int fileLength = 0;
         byte[] fileData = null;
         boolean image = false;

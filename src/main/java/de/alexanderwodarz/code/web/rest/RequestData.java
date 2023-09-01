@@ -13,6 +13,7 @@ public class RequestData {
 
     private HashMap<String, String> headers = new HashMap<>();
     private HashMap<String, String> queries = new HashMap<>();
+    private HashMap<String, String> variables = new HashMap<>();
     private String method, path, scheme, body, originalPath;
     private int level;
     private Socket socket;
