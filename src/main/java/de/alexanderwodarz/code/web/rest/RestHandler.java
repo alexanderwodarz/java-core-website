@@ -98,7 +98,10 @@ public class RestHandler extends Thread {
                 if (method != null) {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
                     if (!response.isAccess()) {
-                        print(response.getError().toString(), "application/json", dataOut, out, response.getCode());
+                        Method cors = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
+                        if(cors != null)
+                            responseHeaders = ((CorsResponse) cors.invoke(null, data)).getHeaders();
+                        print(response.getError().toString(), "application/json", dataOut, out,response.getCode(), responseHeaders);
                         return;
                     }
                 }
