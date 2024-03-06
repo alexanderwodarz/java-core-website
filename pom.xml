@@ -10,7 +10,7 @@
 
     <groupId>de.alexanderwodarz.code</groupId>
     <artifactId>java-core-website</artifactId>
-    <version>1.4</version>
+    <version>1.4.1</version>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -40,7 +40,6 @@
             </properties>
         </developer>
     </developers>
-
 
     <scm>
         <connection>scm:git:git://github.com/alexanderwodarz/java-core-website.git</connection>
