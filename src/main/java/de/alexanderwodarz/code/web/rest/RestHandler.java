@@ -16,6 +16,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -99,9 +100,9 @@ public class RestHandler extends Thread {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
                     if (!response.isAccess()) {
                         Method cors = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
-                        if(cors != null)
+                        if (cors != null)
                             responseHeaders = ((CorsResponse) cors.invoke(null, data)).getHeaders();
-                        print(response.getError().toString(), "application/json", dataOut, out,response.getCode(), responseHeaders);
+                        print(response.getError().toString(), "application/json", dataOut, out, response.getCode(), responseHeaders);
                         return;
                     }
                 }
@@ -147,6 +148,24 @@ public class RestHandler extends Thread {
                         o[i] = Double.parseDouble(body);
                     } else if (type.equals(Long.class)) {
                         o[i] = Long.parseLong(body);
+                    } else if (BodyModel.class.isAssignableFrom(type)) {
+                        try {
+                            JSONObject object = new JSONObject(body);
+                            BodyModel instance = (BodyModel) type.getDeclaredConstructor().newInstance();
+                            setFields(instance, object, type, data, dataOut, out);
+                            o[i] = instance;
+                        } catch (Exception e) {
+                            if (e instanceof JSONException && e.getMessage().startsWith("Unterminated string at")) {
+                                error(400, new JSONObject().put("error", "invalid request body").toString(), e, data, dataOut, out);
+                                return;
+                            }
+                            if (e instanceof JSONException && e.getMessage().contains("JSONObject[") && e.getMessage().contains("not found")) {
+                                error(400, new JSONObject().put("error", "missing parameter " + e.getMessage().split("\"")[1]).toString(), e, data, dataOut, out);
+                                return;
+                            }
+                            o[i] = null;
+                            e.printStackTrace();
+                        }
                     } else {
                         o[i] = body;
                     }
@@ -183,7 +202,6 @@ public class RestHandler extends Thread {
                     dataOut.close();
                 connect.close();
             } catch (Exception e) {
-                e.printStackTrace();
             }
 
         }
@@ -244,6 +262,96 @@ public class RestHandler extends Thread {
             if (findPathResponse.isExactMatch()) break;
         }
         return req;
+    }
+
+
+    private void setFields(BodyModel instance, JSONObject object, Class<?> type, RequestData data, BufferedOutputStream dataOut, PrintWriter out) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
+        Field[] fields = type.getDeclaredFields();
+        instance.setObj(object);
+        for (Field field : fields) {
+            if (!object.has(field.getName())) {
+                error(400, new JSONObject().put("error", "missing parameter " + field.getName()).toString(), new Exception("missing parameter " + field.getName()), data, dataOut, out);
+                return;
+            }
+            field.setAccessible(true);
+            if (BodyModel.class.isAssignableFrom(field.getType()) && object.get(field.getName()) instanceof JSONObject) {
+                BodyModel newInstance = (BodyModel) field.getType().getDeclaredConstructor().newInstance();
+                setFields(newInstance, object.getJSONObject(field.getName()), field.getType(), data, dataOut, out);
+                field.set(instance, newInstance);
+                continue;
+            }
+            System.out.println(field.getType().getName());
+            switch (field.getType().getName()) {
+                case "java.util.List": {
+                    if (object.get(field.getName()) instanceof JSONArray) {
+                        List<Object> list = new ArrayList<>();
+                        object.getJSONArray(field.getName()).forEach(a -> {
+                            if (a instanceof String)
+                                list.add(a);
+                        });
+                        field.set(instance, list);
+                    } else
+                        error(400, new JSONObject().put("error", field.getName() + " must be JSONArray").toString(), new Exception(field.getName() + " must be JSONArray"), data, dataOut, out);
+                    break;
+                }
+                case "java.lang.String": {
+                    if (object.get(field.getName()) instanceof String)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be String").toString(), new Exception(field.getName() + " must be String"), data, dataOut, out);
+                    break;
+                }
+                case "org.json.JSONObject": {
+                    if (object.get(field.getName()) instanceof JSONObject)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be JSONObject").toString(), new Exception(field.getName() + " must be JSONObject"), data, dataOut, out);
+                    break;
+                }
+                case "org.json.JSONArray": {
+                    if (object.get(field.getName()) instanceof JSONArray)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be JSONArray").toString(), new Exception(field.getName() + " must be JSONArray"), data, dataOut, out);
+                    break;
+                }
+                case "boolean": {
+                    if (object.get(field.getName()) instanceof Boolean)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be boolean").toString(), new Exception(field.getName() + " must be boolean"), data, dataOut, out);
+                    break;
+                }
+                case "int": {
+                    if (object.get(field.getName()) instanceof Integer)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be integer").toString(), new Exception(field.getName() + " must be integer"), data, dataOut, out);
+                    break;
+                }
+                case "long": {
+                    if (object.get(field.getName()) instanceof Long || object.get(field.getName()) instanceof Integer)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be long").toString(), new Exception(field.getName() + " must be long"), data, dataOut, out);
+                    break;
+                }
+                case "double": {
+                    if (object.get(field.getName()) instanceof Double || object.get(field.getName()) instanceof Integer)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be double").toString(), new Exception(field.getName() + " must be double"), data, dataOut, out);
+                    break;
+                }
+                case "float": {
+                    if (object.get(field.getName()) instanceof Float || object.get(field.getName()) instanceof Integer)
+                        field.set(instance, object.get(field.getName()));
+                    else
+                        error(400, new JSONObject().put("error", field.getName() + " must be float").toString(), new Exception(field.getName() + " must be float"), data, dataOut, out);
+                    break;
+                }
+            }
+        }
     }
 
     public FindPathResponse testPath(String requested, String toTest) {
@@ -308,7 +416,6 @@ public class RestHandler extends Thread {
             dataOut.write(fileData, 0, fileLength);
             dataOut.flush();
         } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 
