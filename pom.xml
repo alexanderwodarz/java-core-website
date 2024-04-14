@@ -10,7 +10,7 @@
 
     <groupId>de.alexanderwodarz.code</groupId>
     <artifactId>java-core-website</artifactId>
-    <version>1.4.1</version>
+    <version>1.4.4</version>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -57,7 +57,7 @@
         <dependency>
             <groupId>de.alexanderwodarz.code</groupId>
             <artifactId>java-core</artifactId>
-            <version>1.4</version>
+            <version>1.4.4</version>
         </dependency>
     </dependencies>
 
