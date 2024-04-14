@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -63,15 +64,24 @@ public class WebCore {
         if (packageName.length() == 0) throw new Exception("Create a package or move class to a package");
         Reflections reflections = new Reflections(packageName);
         filter = reflections.getSubTypesOf(AuthenticationFilter.class).stream().findFirst().orElse(null);
-        for (Class<?> aClass : reflections.getTypesAnnotatedWith(RestController.class))
+        for (Class<?> aClass : reflections.getTypesAnnotatedWith(RestController.class)) {
+            RestController controller = aClass.getAnnotation(RestController.class);
+            List<Method> methods = new ArrayList<>();
+            if (!controller.extend().getName().equals("java.lang.Object"))
+                for (Method declaredMethod : controller.extend().getDeclaredMethods())
+                    if (declaredMethod.isAnnotationPresent(RestRequest.class))
+                        methods.add(declaredMethod);
             for (Method declaredMethod : aClass.getDeclaredMethods())
-                if (declaredMethod.isAnnotationPresent(RestRequest.class)) {
-                    RestWebRequest request = new RestWebRequest();
-                    request.setRequest(declaredMethod.getAnnotation(RestRequest.class));
-                    request.setController(aClass.getAnnotation(RestController.class));
-                    request.setMethod(declaredMethod);
-                    requests.add(request);
-                }
+                if (declaredMethod.isAnnotationPresent(RestRequest.class))
+                    methods.add(declaredMethod);
+            for (Method method : methods) {
+                RestWebRequest request = new RestWebRequest();
+                request.setRequest(method.getAnnotation(RestRequest.class));
+                request.setController(aClass.getAnnotation(RestController.class));
+                request.setMethod(method);
+                requests.add(request);
+            }
+        }
         ServerSocket serverSocket = getSocket(map);
         Thread thread = new Thread(() -> {
             while (true) {
@@ -94,7 +104,7 @@ public class WebCore {
         map.getVaribles().stream().filter(v -> v.getKey().equals("https")).findFirst().ifPresent(b -> https.set(Boolean.parseBoolean(b.getValue().toString())));
         Varible location = map.getVaribles().stream().filter(v -> v.getKey().equals("location")).findFirst().orElse(null);
         Varible password = map.getVaribles().stream().filter(v -> v.getKey().equals("password")).findFirst().orElse(null);
-        if(https.get() && location != null && password != null){
+        if (https.get() && location != null && password != null) {
             try {
                 return getServerSocket(port.get(), location.getValue().toString(), password.getValue().toString());
             } catch (Exception ignored) {
@@ -128,6 +138,7 @@ public class WebCore {
         sslContext.init(keyManagerFactory.getKeyManagers(), null, null);
         return sslContext;
     }
+
     public static ArrayList<RestWebRequest> getRequests() {
         return requests;
     }

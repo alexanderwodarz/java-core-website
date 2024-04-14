@@ -214,11 +214,13 @@ public class RestHandler extends Thread {
     public void error(int statusCode, String body, Exception e, RequestData data, BufferedOutputStream dataOut, PrintWriter out, boolean showError) {
         if (showError)
             Log.log(e.getMessage(), Level.ERROR);
+        data.setOriginalMethod(data.getMethod());
         data.setMethod("GET");
         data.setPath("/error/" + statusCode);
         RestWebRequest req = findRequest(data);
 
         if (req != null) {
+            data.setException(e);
             ResponseData response = trigger(req, data);
             if (response != null) {
                 body = response.getBody();
@@ -240,7 +242,7 @@ public class RestHandler extends Thread {
                 o[i] = data;
         }
         try {
-            return (ResponseData) req.getMethod().invoke(null);
+            return (ResponseData) req.getMethod().invoke(null, o);
         } catch (IllegalAccessException | InvocationTargetException | NullPointerException ex) {
             return null;
         }

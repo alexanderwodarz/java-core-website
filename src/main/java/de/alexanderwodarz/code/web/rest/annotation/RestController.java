@@ -13,4 +13,6 @@ public @interface RestController {
 
     String produces() default "";
 
+    Class extend() default Object.class;
+
 }

@@ -14,9 +14,10 @@ public class RequestData {
     private HashMap<String, String> headers = new HashMap<>();
     private HashMap<String, String> queries = new HashMap<>();
     private HashMap<String, String> variables = new HashMap<>();
-    private String method, path, scheme, body, originalPath;
+    private String method, path, scheme, body, originalPath, originalMethod;
     private int level;
     private Socket socket;
+    private Exception exception;
 
     public String getHeader(String header) {
         return headers.getOrDefault(header.toLowerCase(Locale.ROOT), null);
