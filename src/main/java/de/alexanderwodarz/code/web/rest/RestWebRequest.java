@@ -17,9 +17,9 @@ public class RestWebRequest {
     private FindPathResponse findPathResponse;
 
     public String getProduces() {
-        if (request.produces().length() > 0)
+        if (!request.produces().isEmpty())
             return request.produces();
-        if (controller.produces().length() > 0)
+        if (!controller.produces().isEmpty())
             return controller.produces();
         return "application/html";
     }
