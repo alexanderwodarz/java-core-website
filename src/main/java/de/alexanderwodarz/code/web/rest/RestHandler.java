@@ -65,14 +65,17 @@ public class RestHandler extends Thread {
             data.setBody(body);
             data.setSocket(connect);
             if (data.getPath().contains("?")) {
-                String queryString = data.getPath().split("\\?")[1];
-                for (String query : queryString.split("&")) {
-                    String[] split = query.split("=");
-                    String key = split[0];
-                    String value = split.length > 1 ? split[1] : "";
-                    data.getQueries().put(key, value);
+                String[] queries = data.getPath().split("\\?");
+                if(queries.length > 1) {
+                    String queryString = data.getPath().split("\\?")[1];
+                    for (String query : queryString.split("&")) {
+                        String[] split = query.split("=");
+                        String key = split[0];
+                        String value = split.length > 1 ? split[1] : "";
+                        data.getQueries().put(key, value);
+                    }
+                    data.setPath(data.getPath().split("\\?")[0]);
                 }
-                data.setPath(data.getPath().split("\\?")[0]);
             }
             out = new PrintWriter(connect.getOutputStream(), true, StandardCharsets.UTF_8);
             dataOut = new BufferedOutputStream(connect.getOutputStream());
@@ -282,7 +285,6 @@ public class RestHandler extends Thread {
                 field.set(instance, newInstance);
                 continue;
             }
-            System.out.println(field.getType().getName());
             switch (field.getType().getName()) {
                 case "java.util.List": {
                     if (object.get(field.getName()) instanceof JSONArray) {
