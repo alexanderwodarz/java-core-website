@@ -16,10 +16,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
+import java.lang.reflect.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -66,7 +63,7 @@ public class RestHandler extends Thread {
             data.setSocket(connect);
             if (data.getPath().contains("?")) {
                 String[] queries = data.getPath().split("\\?");
-                if(queries.length > 1) {
+                if (queries.length > 1) {
                     String queryString = data.getPath().split("\\?")[1];
                     for (String query : queryString.split("&")) {
                         String[] split = query.split("=");
@@ -155,7 +152,8 @@ public class RestHandler extends Thread {
                         try {
                             JSONObject object = new JSONObject(body);
                             BodyModel instance = (BodyModel) type.getDeclaredConstructor().newInstance();
-                            setFields(instance, object, type, data, dataOut, out);
+                            if (!setFields(instance, object, type, data, dataOut, out))
+                                return;
                             o[i] = instance;
                         } catch (Exception e) {
                             if (e instanceof JSONException && e.getMessage().startsWith("Unterminated string at")) {
@@ -195,6 +193,8 @@ public class RestHandler extends Thread {
             error(500, new JSONObject().put("error", "internal server error").toString(), e, data, dataOut, out);
         } catch (FileNotFoundException | NullPointerException | IllegalAccessException e) {
             error(404, new JSONObject().put("error", "not found").put("method", data.getMethod()).put("path", data.getPath()).toString(), e, data, dataOut, out);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            error(400, new JSONObject().put("error", "invalid request").toString(), e, data, dataOut, out);
         } catch (IOException ioe) {
             System.err.println("Server error : " + ioe);
         } finally {
@@ -270,29 +270,37 @@ public class RestHandler extends Thread {
     }
 
 
-    private void setFields(BodyModel instance, JSONObject object, Class<?> type, RequestData data, BufferedOutputStream dataOut, PrintWriter out) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
+    private boolean setFields(BodyModel instance, JSONObject object, Class<?> type, RequestData data, BufferedOutputStream dataOut, PrintWriter out) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
         Field[] fields = type.getDeclaredFields();
         instance.setObj(object);
         for (Field field : fields) {
             if (!object.has(field.getName())) {
                 error(400, new JSONObject().put("error", "missing parameter " + field.getName()).toString(), new Exception("missing parameter " + field.getName()), data, dataOut, out);
-                return;
+                return false;
             }
             field.setAccessible(true);
             if (BodyModel.class.isAssignableFrom(field.getType()) && object.get(field.getName()) instanceof JSONObject) {
                 BodyModel newInstance = (BodyModel) field.getType().getDeclaredConstructor().newInstance();
-                setFields(newInstance, object.getJSONObject(field.getName()), field.getType(), data, dataOut, out);
+                if (!setFields(newInstance, object.getJSONObject(field.getName()), field.getType(), data, dataOut, out))
+                    return false;
                 field.set(instance, newInstance);
                 continue;
             }
             switch (field.getType().getName()) {
                 case "java.util.List": {
                     if (object.get(field.getName()) instanceof JSONArray) {
+                        JSONArray jsonArray = object.getJSONArray(field.getName());
                         List<Object> list = new ArrayList<>();
-                        object.getJSONArray(field.getName()).forEach(a -> {
-                            if (a instanceof String)
-                                list.add(a);
-                        });
+                        Class<?> componentType = (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0];
+                        for (int i = 0; i < jsonArray.length(); i++) {
+                            JSONObject jsonItem = jsonArray.getJSONObject(i);
+                            if (BodyModel.class.isAssignableFrom(componentType) && jsonItem != null) {
+                                BodyModel newInstance = (BodyModel) componentType.getDeclaredConstructor().newInstance();
+                                if (!setFields(newInstance, jsonItem, componentType, data, dataOut, out))
+                                    return false;
+                                list.add(newInstance);
+                            }
+                        }
                         field.set(instance, list);
                     } else
                         error(400, new JSONObject().put("error", field.getName() + " must be JSONArray").toString(), new Exception(field.getName() + " must be JSONArray"), data, dataOut, out);
@@ -356,6 +364,7 @@ public class RestHandler extends Thread {
                 }
             }
         }
+        return true;
     }
 
     public FindPathResponse testPath(String requested, String toTest) {
