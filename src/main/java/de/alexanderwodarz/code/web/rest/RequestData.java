@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 
 @Getter
@@ -14,6 +16,7 @@ public class RequestData {
     private HashMap<String, String> headers = new HashMap<>();
     private HashMap<String, String> queries = new HashMap<>();
     private HashMap<String, String> variables = new HashMap<>();
+    private List<Cookie> cookies = new ArrayList<>();
     private String method, path, scheme, body, originalPath, originalMethod;
     private int level;
     private Socket socket;
