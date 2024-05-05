@@ -51,7 +51,7 @@ public class RestHandler extends Thread {
                     first = false;
                 }
                 if (line.contains(":"))
-                    headers.put(line.split(":")[0].toLowerCase(Locale.ROOT), line.split(":")[1].trim());
+                    headers.put(line.split(": ")[0].toLowerCase(Locale.ROOT), line.split(": ")[1].trim());
                 line = br.readLine();
             }
             String body = "";
@@ -59,6 +59,8 @@ public class RestHandler extends Thread {
                 body += (char) br.read();
             if (headers.size() == 0) return;
             data.setHeaders(headers);
+            if (data.getHeader("cookie") != null)
+                Arrays.stream(data.getHeader("cookie").split("; ")).sequential().forEach(cookie -> data.getCookies().add(new Cookie(cookie.split("=")[0], cookie.split("=")[1])));
             data.setBody(body);
             data.setSocket(connect);
             if (data.getPath().contains("?")) {
@@ -181,6 +183,7 @@ public class RestHandler extends Thread {
             else
                 response = (ResponseData) req.getMethod().invoke(null);
             AuthenticationManager.setAuthentication(null);
+            responseHeaders.addAll(response.getHeaders());
             if (response.getFile() == null)
                 print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
             else {
@@ -293,6 +296,10 @@ public class RestHandler extends Thread {
                         List<Object> list = new ArrayList<>();
                         Class<?> componentType = (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0];
                         for (int i = 0; i < jsonArray.length(); i++) {
+                            if (jsonArray.get(i) instanceof String) {
+                                list.add(jsonArray.get(i));
+                                continue;
+                            }
                             JSONObject jsonItem = jsonArray.getJSONObject(i);
                             if (BodyModel.class.isAssignableFrom(componentType) && jsonItem != null) {
                                 BodyModel newInstance = (BodyModel) componentType.getDeclaredConstructor().newInstance();
