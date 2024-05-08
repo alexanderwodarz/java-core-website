@@ -9,6 +9,7 @@ import org.json.JSONObject;
 public class AuthenticationFilterResponse {
 
     private boolean access;
+    private Authentication authentication;
     private Object error;
     private int code;
 
@@ -24,6 +25,11 @@ public class AuthenticationFilterResponse {
         AuthenticationFilterResponse response = new AuthenticationFilterResponse();
         response.setAccess(true);
         return response;
+    }
+
+    public AuthenticationFilterResponse setAuthentication(Authentication authentication) {
+        this.authentication = authentication;
+        return this;
     }
 
 }

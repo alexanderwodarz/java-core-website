@@ -1,5 +1,6 @@
 package de.alexanderwodarz.code.web.rest;
 
+import de.alexanderwodarz.code.web.rest.authentication.Authentication;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -17,6 +18,7 @@ public class RequestData {
     private HashMap<String, String> queries = new HashMap<>();
     private HashMap<String, String> variables = new HashMap<>();
     private List<Cookie> cookies = new ArrayList<>();
+    private Authentication authentication;
     private String method, path, scheme, body, originalPath, originalMethod;
     private int level;
     private Socket socket;

@@ -7,7 +7,6 @@ import de.alexanderwodarz.code.web.rest.annotation.PathVariable;
 import de.alexanderwodarz.code.web.rest.annotation.QueryParam;
 import de.alexanderwodarz.code.web.rest.annotation.RequestBody;
 import de.alexanderwodarz.code.web.rest.authentication.AuthenticationFilterResponse;
-import de.alexanderwodarz.code.web.rest.authentication.AuthenticationManager;
 import de.alexanderwodarz.code.web.rest.authentication.CorsResponse;
 import lombok.SneakyThrows;
 import org.apache.commons.io.IOUtils;
@@ -100,6 +99,8 @@ public class RestHandler extends Thread {
                 Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doFilter")).findFirst().orElse(null);
                 if (method != null) {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
+                    if(response.getAuthentication() != null)
+                        data.setAuthentication(response.getAuthentication());
                     if (!response.isAccess()) {
                         Method cors = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
                         if (cors != null)
@@ -182,7 +183,6 @@ public class RestHandler extends Thread {
                 response = (ResponseData) req.getMethod().invoke(null, o);
             else
                 response = (ResponseData) req.getMethod().invoke(null);
-            AuthenticationManager.setAuthentication(null);
             responseHeaders.addAll(response.getHeaders());
             if (response.getFile() == null)
                 print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
