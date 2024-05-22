@@ -59,7 +59,10 @@ public class RestHandler extends Thread {
             if (headers.size() == 0) return;
             data.setHeaders(headers);
             if (data.getHeader("cookie") != null)
-                Arrays.stream(data.getHeader("cookie").split("; ")).sequential().forEach(cookie -> data.getCookies().add(new Cookie(cookie.split("=")[0], cookie.split("=")[1])));
+                Arrays.stream(data.getHeader("cookie").split("; ")).sequential().forEach(cookie -> {
+                    String[] splitted = cookie.split("=");
+                    data.getCookies().add(new Cookie(splitted[0], splitted.length == 1 ? "" : splitted[1]));
+                });
             data.setBody(body);
             data.setSocket(connect);
             if (data.getPath().contains("?")) {
@@ -99,7 +102,7 @@ public class RestHandler extends Thread {
                 Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doFilter")).findFirst().orElse(null);
                 if (method != null) {
                     AuthenticationFilterResponse response = (AuthenticationFilterResponse) method.invoke(null, data);
-                    if(response.getAuthentication() != null)
+                    if (response.getAuthentication() != null)
                         data.setAuthentication(response.getAuthentication());
                     if (!response.isAccess()) {
                         Method cors = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
