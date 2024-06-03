@@ -10,6 +10,7 @@ import de.alexanderwodarz.code.web.rest.authentication.AuthenticationFilterRespo
 import de.alexanderwodarz.code.web.rest.authentication.CorsResponse;
 import lombok.SneakyThrows;
 import org.apache.commons.io.IOUtils;
+import org.bson.Document;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -35,6 +36,7 @@ public class RestHandler extends Thread {
         BufferedOutputStream dataOut = null;
         String fileRequested = null;
         RequestData data = new RequestData();
+        data.setDate(System.currentTimeMillis());
         HashMap<String, String> headers = new HashMap<>();
         try {
             BufferedReader br = new BufferedReader(new InputStreamReader(connect.getInputStream()));
@@ -82,6 +84,8 @@ public class RestHandler extends Thread {
             dataOut = new BufferedOutputStream(connect.getOutputStream());
             List<String> responseHeaders = new ArrayList<>();
             RestWebRequest req = findRequest(data);
+
+
             if (WebCore.getFilter() != null) {
                 if (data.getMethod().equalsIgnoreCase("options")) {
                     Method method = Arrays.stream(WebCore.getFilter().getMethods()).filter(m -> m.getName().equalsIgnoreCase("doCors")).findFirst().orElse(null);
@@ -91,7 +95,6 @@ public class RestHandler extends Thread {
                         return;
                     }
                 }
-
                 if (req == null) {
                     error(404, new JSONObject().put("error", "not found").put("path", data.getPath()).put("method", data.getMethod()).toString(), null, data, dataOut, out, false);
                     return;
@@ -122,6 +125,9 @@ public class RestHandler extends Thread {
                 error(404, new JSONObject().put("error", "not found").put("path", data.getPath()).put("method", data.getMethod()).toString(), null, data, dataOut, out, false);
                 return;
             }
+            data.setLevel(req.getRequest().level());
+            data.setOriginalPath(req.getController().path() + req.getRequest().path());
+            data.setVariables(req.getFindPathResponse().getVariables());
             Object[] o = new Object[req.getMethod().getParameterCount()];
             for (int i = 0; i < req.getMethod().getParameters().length; i++) {
                 Parameter parameter = req.getMethod().getParameters()[i];
@@ -189,10 +195,9 @@ public class RestHandler extends Thread {
             responseHeaders.addAll(response.getHeaders());
             if (response.getFile() == null)
                 print(response.getBody(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
-            else {
+            else
                 printFile(response.getFile(), req.getProduces(), dataOut, out, response.getCode(), responseHeaders);
-            }
-
+            log(data, response);
         } catch (JSONException | IllegalArgumentException e) {
             error(400, new JSONObject().put("error", "invalid argument").toString(), e, data, dataOut, out);
         } catch (InvocationTargetException e) {
@@ -237,6 +242,47 @@ public class RestHandler extends Thread {
             }
         }
         print(body, "application/json", dataOut, out, statusCode);
+        ResponseData responseData = new ResponseData(body, statusCode);
+        log(data, responseData);
+    }
+
+    private void log(RequestData request, ResponseData response) {
+        if (WebCore.collection == null)
+            return;
+        Document logging = new Document();
+        Document requestLogging = new Document();
+        requestLogging.append("method", request.getMethod());
+        requestLogging.append("path", request.getPath());
+        requestLogging.append("originalMethod", request.getOriginalMethod());
+        requestLogging.append("originalPath", request.getOriginalPath());
+        requestLogging.append("body", request.getBody());
+        Document requestHeader = new Document();
+        for (Map.Entry<String, String> stringStringEntry : request.getHeaders().entrySet())
+            requestHeader.append(stringStringEntry.getKey(), stringStringEntry.getValue());
+        Document variables = new Document();
+        for (Map.Entry<String, String> stringStringEntry : request.getVariables().entrySet())
+            variables.append(stringStringEntry.getKey(), stringStringEntry.getValue());
+        Document queries = new Document();
+        for (Map.Entry<String, String> stringStringEntry : request.getQueries().entrySet())
+            queries.append(stringStringEntry.getKey(), stringStringEntry.getValue());
+        requestLogging.append("queries", queries);
+        requestLogging.append("date", request.getDate());
+        requestLogging.append("variable", variables);
+        requestLogging.append("headers", requestHeader);
+        logging.append("request", requestLogging);
+        if (response != null) {
+            Document responseLogging = new Document();
+            Document responseHeader = new Document();
+            response.getHeaders().stream().forEach(h -> {
+                String[] split = h.split(":");
+                responseHeader.append(split[0], split.length == 1 ? "" : split[1]);
+            });
+            responseLogging.append("header", responseHeader);
+            responseLogging.append("status", response.getCode());
+            responseLogging.append("body", response.getBody());
+            logging.append("response", responseLogging);
+        }
+        WebCore.collection.insertOne(logging);
     }
 
     public ResponseData trigger(RestWebRequest req, RequestData data) {
@@ -274,7 +320,6 @@ public class RestHandler extends Thread {
         }
         return req;
     }
-
 
     private boolean setFields(BodyModel instance, JSONObject object, Class<?> type, RequestData data, BufferedOutputStream dataOut, PrintWriter out) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
         Field[] fields = type.getDeclaredFields();
@@ -408,12 +453,9 @@ public class RestHandler extends Thread {
             return;
         int fileLength = 0;
         byte[] fileData = null;
-        boolean image = false;
         if (contentType.contains("html") || contentType.contains("javascript")) {
             fileData = content.getBytes(StandardCharsets.UTF_8);
             fileLength = content.getBytes().length;
-        } else if (contentType.equals("image/png")) {
-            image = true;
         } else {
             fileData = content.getBytes(StandardCharsets.UTF_8);
             fileLength = fileData.length;

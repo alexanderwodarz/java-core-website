@@ -22,6 +22,7 @@ public class RequestData {
     private String method, path, scheme, body, originalPath, originalMethod;
     private int level;
     private Socket socket;
+    private long date;
     private Exception exception;
 
     public String getHeader(String header) {

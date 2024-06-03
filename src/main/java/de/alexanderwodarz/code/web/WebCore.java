@@ -1,5 +1,9 @@
 package de.alexanderwodarz.code.web;
 
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import de.alexanderwodarz.code.log.Color;
 import de.alexanderwodarz.code.log.Log;
 import de.alexanderwodarz.code.model.varible.Varible;
@@ -30,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class WebCore {
+    public static MongoCollection collection;
     private static Color[] colors = new Color[]{Color.BRIGHT_BLACK, Color.BRIGHT_RED, Color.BRIGHT_GREEN, Color.BRIGHT_YELLOW, Color.BRIGHT_BLUE, Color.BRIGHT_PURPLE, Color.BRIGHT_CYAN, Color.BLACK, Color.RED, Color.GREEN, Color.YELLOW, Color.BLUE, Color.PURPLE, Color.CYAN,};
     private static ArrayList<RestWebRequest> requests = new ArrayList<>();
     private static Class<? extends AuthenticationFilter> filter;
@@ -83,6 +88,7 @@ public class WebCore {
             }
         }
         ServerSocket serverSocket = getSocket(map);
+        handleEnableLogging(map);
         Thread thread = new Thread(() -> {
             while (true) {
                 try {
@@ -95,6 +101,19 @@ public class WebCore {
             }
         });
         thread.start();
+    }
+
+    private static void handleEnableLogging(VaribleMap map) {
+        Varible host = map.getVaribles().stream().filter(v -> v.getKey().equals("logging.host")).findFirst().orElse(null);
+        Varible user = map.getVaribles().stream().filter(v -> v.getKey().equals("logging.user")).findFirst().orElse(null);
+        Varible password = map.getVaribles().stream().filter(v -> v.getKey().equals("logging.password")).findFirst().orElse(null);
+        Varible db = map.getVaribles().stream().filter(v -> v.getKey().equals("logging.database")).findFirst().orElse(null);
+        Varible collection = map.getVaribles().stream().filter(v -> v.getKey().equals("logging.collection")).findFirst().orElse(null);
+        if (host == null || user == null || password == null || db == null)
+            return;
+        MongoClient mongoClient = MongoClients.create("mongodb://" + user.getValue().toString() + ":" + password.getValue().toString() + "@" + host.getValue().toString() + "/" + db.getValue().toString() + "?retryWrites=true&w=majority");
+        MongoDatabase database = mongoClient.getDatabase(db.getValue().toString());
+        WebCore.collection = database.getCollection(collection == null ? "api_logging" : collection.getValue().toString());
     }
 
     private static ServerSocket getSocket(VaribleMap map) throws IOException {
