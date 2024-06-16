@@ -56,8 +56,13 @@ public class RestHandler extends Thread {
                 line = br.readLine();
             }
             String body = "";
-            while (br.ready())
-                body += (char) br.read();
+            if ("chunked".equalsIgnoreCase(headers.get("transfer-encoding"))) {
+                body = readChunkedBody(br);
+            } else {
+                while (br.ready())
+                    body += (char) br.read();
+            }
+
             if (headers.size() == 0) return;
             data.setHeaders(headers);
             if (data.getHeader("cookie") != null)
@@ -219,6 +224,22 @@ public class RestHandler extends Thread {
             }
 
         }
+    }
+
+    private String readChunkedBody(BufferedReader reader) throws IOException {
+        StringBuilder body = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            int chunkSize = Integer.parseInt(line, 16);
+            if (chunkSize == 0) break;
+            char[] chunk = new char[chunkSize];
+            reader.read(chunk, 0, chunkSize);
+            body.append(chunk);
+            reader.readLine();  // Skip CRLF
+        }
+        return body.toString();
     }
 
     public void error(int statusCode, String body, Exception e, RequestData data, BufferedOutputStream dataOut, PrintWriter out) {
@@ -565,5 +586,4 @@ public class RestHandler extends Thread {
     private void locked(Socket socket, String path, String method, BufferedOutputStream dataOut, PrintWriter out) {
         print("Security issue detected, request denied", "text/html", dataOut, out, 423);
     }
-
 }
